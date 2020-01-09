@@ -34,6 +34,10 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
 	float *rec_x_d, *rec_y_d, *rec_z_d, *qr_d, *lig_x_d, *lig_y_d, *lig_z_d, *ql_d, *energy_d;
 
 	//reservamos memoria para GPU
+  int memsize = sizeof(float)*nconformations*nlig;
+  cudaMalloc(&lig_x_d, memsize);
+  cudaMalloc(&lig_y_d, memsize);
+  cudaMalloc(&lig_z_d, memsize);
 
 	//pasamos datos de host to device
 	
