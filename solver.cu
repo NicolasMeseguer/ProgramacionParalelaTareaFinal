@@ -14,6 +14,7 @@ using namespace std;
 * Kernel del calculo de la solvation. Se debe anadir los parametros 
 */
 __global__ void escalculation (int atoms_r, int atoms_l, int nlig, float *rec_x_d, float *rec_y_d, float *rec_z_d, float *lig_x_d, float *lig_y_d, float *lig_z_d, float *ql_d,float *qr_d, float *energy_d, int nconformations, int TAMBLOCK){
+  //__shared__ float ES_es;
   int ind = blockIdx.x*blockDim.x+threadIdx.x;
   double dist, total_elec = 0, miatomo[3], elecTerm;	
 	
@@ -28,8 +29,10 @@ __global__ void escalculation (int atoms_r, int atoms_l, int nlig, float *rec_x_
         elecTerm = (ql_d[j]*qr_d[k]) / dist;
         total_elec += elecTerm;
       }
+      //atomicAdd(&ES_es, total_elec);
     }
-    energy_d[i/nlig] = total_elec;
+    __syncthreads();
+    energy_d[i/nlig] = total_elec;//ES_es;
     total_elec = 0;
   }
 }
