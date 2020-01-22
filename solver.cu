@@ -7,18 +7,19 @@
 #include "energy_struct.h"
 #include "cuda_runtime.h"
 #include "solver.h"
+#include "cuda.h"
 
 using namespace std;
 
 /**
 * Kernel del calculo de la solvation. Se debe anadir los parametros 
 */
-__global__ void escalculation (int atoms_r, int atoms_l, int nlig, float *rec_x_d, float *rec_y_d, float *rec_z_d, float *lig_x_d, float *lig_y_d, float *lig_z_d, float *ql_d,float *qr_d, float *energy_d, int nconformations, int TAMBLOCK){
-  //__shared__ float ES_es;
+__global__ void escalculation (int atoms_r, int atoms_l, int nlig, float *rec_x_d, float *rec_y_d, float *rec_z_d, float *lig_x_d, float *lig_y_d, float *lig_z_d, float *ql_d,float *qr_d, float *energy_d, int nconformations){
+  
   int ind = blockIdx.x*blockDim.x+threadIdx.x;
+  int i = ind * nlig;
   double dist, total_elec = 0, miatomo[3], elecTerm;	
-	
-  for(int i = ind; i < nconformations; i+=TAMBLOCK){
+  if(ind < nconformations){	
     for(int j = 0; j < atoms_l; j++){
       miatomo[0] = *(lig_x_d + i + j);
       miatomo[1] = *(lig_y_d + i + j);
@@ -29,14 +30,11 @@ __global__ void escalculation (int atoms_r, int atoms_l, int nlig, float *rec_x_
         elecTerm = (ql_d[j]*qr_d[k]) / dist;
         total_elec += elecTerm;
       }
-      //atomicAdd(&ES_es, total_elec);
     }
-    __syncthreads();
-    energy_d[i/nlig] = total_elec;//ES_es;
+    energy_d[i/nlig] = total_elec;
     total_elec = 0;
   }
 }
-
 
 /**
 * Funcion para manejar el lanzamiento de CUDA 
@@ -53,18 +51,15 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
 	float *rec_x_d, *rec_y_d, *rec_z_d, *qr_d, *lig_x_d, *lig_y_d, *lig_z_d, *ql_d, *energy_d;
 
 	//reservamos memoria para GPU
-  int memsize = sizeof(float)*nlig;
-  cudaMalloc(&lig_x_d, memsize);
-  cudaMalloc(&lig_y_d, memsize);
-  cudaMalloc(&lig_z_d, memsize);
-  cudaMalloc(&ql_d, memsize); 
-
-  /*Diferente TAM de memoria... Explicacion en la entrevista si es necesario.
+  int memsize;
+  
+  //Diferente TAM de memoria... Explicacion en la entrevista si es necesario.
+  //memsize = sizeof(float)*nlig;
   memsize = sizeof(float)*nlig*nconformations;
   cudaMalloc(&lig_x_d, memsize);
   cudaMalloc(&lig_y_d, memsize);
   cudaMalloc(&lig_z_d, memsize);
-  */  
+  cudaMalloc(&ql_d, memsize);
   
   memsize = sizeof(float)*atoms_r;
   cudaMalloc(&rec_x_d, memsize);
@@ -74,8 +69,8 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
 	
   memsize = sizeof(float)*nconformations;
   cudaMalloc(&energy_d, memsize);
-
-  //pasamos datos de host to device
+  
+//pasamos datos de host to device
   cudaMemcpy(energy_d, energy, memsize, cudaMemcpyHostToDevice);
   
   memsize = sizeof(float)*atoms_r;
@@ -84,26 +79,26 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
   cudaMemcpy(rec_z_d, rec_z, memsize, cudaMemcpyHostToDevice);
   cudaMemcpy(qr_d, qr, memsize, cudaMemcpyHostToDevice);
   
-  memsize = sizeof(float)*nlig;
+  memsize = sizeof(float)*nlig*nconformations;
   cudaMemcpy(lig_x_d, lig_x, memsize, cudaMemcpyHostToDevice);
   cudaMemcpy(lig_y_d, lig_y, memsize, cudaMemcpyHostToDevice);
   cudaMemcpy(lig_z_d, lig_z, memsize, cudaMemcpyHostToDevice);
   cudaMemcpy(ql_d, ql, memsize, cudaMemcpyHostToDevice);
 
 	//Definir numero de hilos y bloques
-	int TAMBLOCK = 512;
-  dim3 block(nconformations);
-  dim3 thread(TAMBLOCK);
-  //printf("bloques: %d\n", (int)ceil(total_hilos/hilos_bloque)+1);
-	//printf("hilos por bloque: %d\n", hilos_bloque);
+	double TAMBLOCK = 256;
+  int block = ceilf(((double)nconformations)/TAMBLOCK);
+  int thread = (TAMBLOCK);
+  printf("Bloques: %d\n", block);
+	printf("Hilos por bloque: %d\n", thread);
 
 	//llamamos a kernel
-	escalculation <<< block,thread>>> (atoms_r, atoms_l, nlig, rec_x_d, rec_y_d, rec_z_d, lig_x_d, lig_y_d, lig_z_d, ql_d, qr_d, energy_d, nconformations, TAMBLOCK);
+	escalculation <<< block,thread>>> (atoms_r, atoms_l, nlig, rec_x_d, rec_y_d, rec_z_d, lig_x_d, lig_y_d, lig_z_d, ql_d, qr_d, energy_d, nconformations);
 	
 	//control de errores kernel
 	cudaDeviceSynchronize();
 	cudaStatus = cudaGetLastError();
-	if(cudaStatus != cudaSuccess) fprintf(stderr, "Error en el kernel %d\n", cudaStatus); 
+  if(cudaStatus != cudaSuccess) fprintf(stderr, "Error en el kernel %d\n", cudaStatus); 
 
 	
   //Traemos info al host 
