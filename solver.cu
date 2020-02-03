@@ -41,8 +41,10 @@ __global__ void escalculation (int atoms_r, int atoms_l, int nlig, float *rec_x_
 */
 void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec_y, float *rec_z, float *lig_x, float *lig_y, float *lig_z, float *ql ,float *qr, float *energy, int nconformations){
 	
-	cudaError_t cudaStatus; //variable para recoger estados de cuda
-
+	
+  cudaError_t cudaStatus; //variable para recoger estados de cuda
+  
+  double tejecucion_i, tejecucion_o, ttransferencia_i, ttransferencia_o;
 
 	//seleccionamos device
 	cudaSetDevice(0); //0 - Tesla K40 vs 1 - Tesla K230
@@ -53,6 +55,7 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
 	//reservamos memoria para GPU
   int memsize;
   
+  ttransferencia_i = wtime();
   //Diferente TAM de memoria... Explicacion en la entrevista si es necesario.
   //memsize = sizeof(float)*nlig;
   memsize = sizeof(float)*nlig*nconformations;
@@ -80,10 +83,12 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
   cudaMemcpy(qr_d, qr, memsize, cudaMemcpyHostToDevice);
   
   memsize = sizeof(float)*nlig*nconformations;
+  //memsize = sizeof(float)*nlig;
   cudaMemcpy(lig_x_d, lig_x, memsize, cudaMemcpyHostToDevice);
   cudaMemcpy(lig_y_d, lig_y, memsize, cudaMemcpyHostToDevice);
   cudaMemcpy(lig_z_d, lig_z, memsize, cudaMemcpyHostToDevice);
-  cudaMemcpy(ql_d, ql, memsize, cudaMemcpyHostToDevice);
+  cudaMemcpy(ql_d, ql, memsize, cudaMemcpyHostToDevice);  
+  ttransferencia_o = wtime() - ttransferencia_i;  
 
 	//Definir numero de hilos y bloques
 	double TAMBLOCK = 256;
@@ -92,9 +97,11 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
   printf("Bloques: %d\n", block);
 	printf("Hilos por bloque: %d\n", thread);
 
+  tejecucion_i = wtime();
 	//llamamos a kernel
 	escalculation <<< block,thread>>> (atoms_r, atoms_l, nlig, rec_x_d, rec_y_d, rec_z_d, lig_x_d, lig_y_d, lig_z_d, ql_d, qr_d, energy_d, nconformations);
-	
+  tejecucion_o = wtime() - tejecucion_i;	
+
 	//control de errores kernel
 	cudaDeviceSynchronize();
 	cudaStatus = cudaGetLastError();
@@ -123,7 +130,7 @@ void forces_GPU_AU (int atoms_r, int atoms_l, int nlig, float *rec_x, float *rec
 	//resultado varia repecto a SECUENCIAL y CUDA en 0.000002 por falta de precision con float
 	//posible solucion utilizar double, probablemente bajara el rendimiento -> mas tiempo para calculo
 	printf("Termino electrostatico %f\n", energy[0]);
-
+  printf("Tiempo de transferencia de datos: %fs\nTiempo de ejecucion en el device: %fs\n", ttransferencia_o, tejecucion_o);
 	//Liberamos memoria reservada para GPU
   cudaFree(rec_x_d);cudaFree(rec_y_d);cudaFree(rec_z_d);cudaFree(lig_x_d);cudaFree(lig_y_d);cudaFree(lig_z_d);cudaFree(qr_d);cudaFree(ql_d);cudaFree(energy_d);
 }
@@ -195,7 +202,7 @@ extern void solver_AU(int mode, int atoms_r, int atoms_l,  int nlig, float *rec_
 			printf("\* CALCULO ELECTROSTATICO EN OPENMP *\n");
 			printf("**************************************\n");			
 			printf("**************************************\n");			
-			printf("Conformations: %d\t Mode: %d, CMP\n",nconformaciones,mode);			
+			printf("Conformations: %d\t Mode: %d, OMP\n",nconformaciones,mode);			
 			elapsed_i = wtime();
 			forces_OMP_AU (atoms_r,atoms_l,nlig,rec_x,rec_y,rec_z,lig_x,lig_y,lig_z,ql,qr,energy_desolv,nconformaciones);
 			elapsed_o = wtime() - elapsed_i;
@@ -208,7 +215,7 @@ extern void solver_AU(int mode, int atoms_r, int atoms_l,  int nlig, float *rec_
 			elapsed_i = wtime();
 			forces_GPU_AU (atoms_r,atoms_l,nlig,rec_x,rec_y,rec_z,lig_x,lig_y,lig_z,ql,qr,energy_desolv,nconformaciones);
 			elapsed_o = wtime() - elapsed_i;
-			printf ("GPU Processing time: %f (seg)\n", elapsed_o);			
+			printf ("GPU Processing total time: %f (seg)\n", elapsed_o);			
 			break; 	
 	  	default:
  	    	printf("Wrong mode type: %d.  Use -h for help.\n", mode);
